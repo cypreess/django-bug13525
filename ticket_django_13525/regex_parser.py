@@ -2,8 +2,8 @@ import unittest
 
 
 class Token:
-    OPEN_PAREN = ord('(')
-    CLOSE_PAREN = ord(')')
+    OPEN_PARENTHESIS = ord('(')
+    CLOSE_PARENTHESIS = ord(')')
 
 
 class Node:
@@ -82,6 +82,8 @@ class Node:
                     pi.next()
                     return True, min_count
                 return False, min_count
+            else:
+                return False, 1
 
         def render(self, text):
             if self.optional:
@@ -118,6 +120,7 @@ class TextNode(Node):
 
 class GroupNode(Node):
     def __init__(self, pattern_iterator):
+        self.name, self.group_pattern = self.parse(pattern_iterator)
         super().__init__(pattern_iterator)
 
     @classmethod
@@ -129,7 +132,26 @@ class GroupNode(Node):
                 break
             name.append(ch)
 
-        # parenth
+        group_pattern = []
+        parenthesis_count = 1
+
+        try:
+            while True:
+                ch = pi.next()
+
+                if ch == Token.CLOSE_PARENTHESIS and parenthesis_count == 1:
+                    break
+                elif ch == Token.OPEN_PARENTHESIS:
+                    parenthesis_count += 1
+                    group_pattern.append('(')
+                elif ch == Token.CLOSE_PARENTHESIS:
+                    parenthesis_count -= 1
+                    group_pattern.append(')')
+                else:
+                    group_pattern.append(ch)
+        except StopIteration:
+            pass
+        return ''.join(name), ''.join(group_pattern)
 
 
 class GroupReferenceNode(Node):
@@ -161,9 +183,9 @@ class RegexLexer:
                     ch = next(self.it)
                     yield self.ESCAPE_MAPPINGS.get(ch, ch)
                 elif ch == '(':
-                    yield Token.OPEN_PAREN
+                    yield Token.OPEN_PARENTHESIS
                 elif ch == ')':
-                    yield Token.CLOSE_PAREN
+                    yield Token.CLOSE_PARENTHESIS
                 elif ch == '[':
                     ch = next(self.it)
                     if ch in '^[':
@@ -182,6 +204,7 @@ class RegexLexer:
                     pass
                 else:
                     yield ch
+
         return _next()
 
 
@@ -253,7 +276,7 @@ def _parse_regex(pi):
             pi.next()
             ch = pi.peek()
             if ch in ('a', 'i', 'L', 'm', 's', 'u', 'x'):
-                FlagNode(pi)
+                yield FlagNode(pi)
             elif ch == ':':
                 pi.next()
                 yield NoncapturingGroup(pi)
@@ -287,8 +310,33 @@ def parse_regex(pattern):
     _parse_regex(pi)
 
 
-class RegexLexerTestCase(unittest.TestCase):
+class GroupNodeTestCase(unittest.TestCase):
+    def test_plain_group(self):
+        pi = PeekableStringIterator(RegexLexer('name>test)after group'))
+        gn = GroupNode(pi)
+        self.assertEqual(gn.name, 'name')
+        self.assertEqual(gn.group_pattern, 'test')
 
+    def test_parentheses_1(self):
+        pi = PeekableStringIterator(RegexLexer('name>test(test1)test2)after group'))
+        gn = GroupNode(pi)
+        self.assertEqual(gn.name, 'name')
+        self.assertEqual(gn.group_pattern, 'test(test1)test2')
+
+    def test_parentheses_2(self):
+        pi = PeekableStringIterator(RegexLexer(r'name>test\)test2)after group'))
+        gn = GroupNode(pi)
+        self.assertEqual(gn.name, 'name')
+        self.assertEqual(gn.group_pattern, 'test)test2')
+
+    def test_parentheses_3(self):
+        pi = PeekableStringIterator(RegexLexer(r'name>test[)]test2)after group'))
+        gn = GroupNode(pi)
+        self.assertEqual(gn.name, 'name')
+        self.assertEqual(gn.group_pattern, 'test[)]test2')
+
+
+class RegexLexerTestCase(unittest.TestCase):
     def test_1(self):
         rl = RegexLexer('test')
         self.assertEqual(list(rl), list('test'))
@@ -319,7 +367,7 @@ class RegexLexerTestCase(unittest.TestCase):
 
     def test_3(self):
         rl = RegexLexer('test(abc)')
-        self.assertEqual(list(rl), list('test') + [Token.OPEN_PAREN] + list('abc') + [Token.CLOSE_PAREN])
+        self.assertEqual(list(rl), list('test') + [Token.OPEN_PARENTHESIS] + list('abc') + [Token.CLOSE_PARENTHESIS])
 
 
 class TextNodeTestCase(unittest.TestCase):
@@ -383,6 +431,13 @@ class NodeQuantifierTestCase(unittest.TestCase):
         self.assertEqual(q.min_count, 1)
         self.assertEqual(q.optional, False)
         self.assertRaises(StopIteration, pi.next)
+
+    def test_no_quantifier(self):
+        pi = PeekableStringIterator(RegexLexer('test'))
+        q = Node.Quantifier(pi)
+        self.assertEqual(q.min_count, 1)
+        self.assertEqual(q.optional, False)
+        self.assertEqual(pi.next(), 't')
 
     def test_optional(self):
         pi = PeekableStringIterator(RegexLexer('?test'))
@@ -493,3 +548,6 @@ class NodeQuantifierTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    import re
+    re.sre_parse
