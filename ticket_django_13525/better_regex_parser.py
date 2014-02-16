@@ -4,8 +4,22 @@ import re
 import unittest
 
 
+
 def parse_at(clause, context):
     return
+
+def parse_in(clause, context):
+    assert len(clause)
+    in_clause_type, in_clause_value = clause[0]
+    if in_clause_type == 'negate':
+        # e.g. ('negate', None)
+        yield '', []
+    elif in_clause_type == 'literal':
+        # e.g. ('literal', 97)
+        yield chr(in_clause_value), []
+    elif in_clause_type == 'range':
+        # e.g. ('range', (99, 100))
+        yield chr(in_clause_value[0])
 
 
 def parse_literal(clause, context):
@@ -30,6 +44,8 @@ def parse_subpattern(clause, context):
         if group_id in context['pattern_reverse_groupdict']:
             # named groups only
             group_name = context['pattern_reverse_groupdict'][group_id]
+            if group_name[0] == '_' and group_name[1:].isdigit():
+                raise ValueError('Group name cannot have format `_\\d+`')
             yield '%%(%s)s' % group_name, [group_name]
         elif not context['in_unnamed_group']:
             # unnamed groups not inside another unnamed group
@@ -51,7 +67,7 @@ def parse_subpattern(clause, context):
 
 
 dispatch_table = {
-    # 'in': parse_in,
+    'in': parse_in,
     'max_repeat': parse_max_repeat,
     'at': parse_at,
     'literal': parse_literal,
@@ -82,9 +98,7 @@ def normalize(pattern):
 def _normalize(pattern_parse_tree, context):
     parse_tree = [handle_clause(c, context) for c in pattern_parse_tree]
     for format_strings in product(*parse_tree):
-        print(format_strings)
         s = sum((f[1] for f in format_strings), [])
-        print(s)
         yield ''.join(f[0] for f in format_strings), unique_list(s)
 
 
@@ -147,6 +161,29 @@ class RegexParserTestCase(unittest.TestCase):
                              ('test%(_1)s%(_4)s', ['_1', '_4']),
                          ]
         )
+
+    def test_normalize_class_1(self):
+        self.assertEqual(list(normalize('[test](group)')),
+                         [
+                             ('t%(_1)s', ['_1']),
+                         ]
+        )
+
+
+    def test_normalize_class_2(self):
+        self.assertEqual(list(normalize('[^test](group)')),
+                         [
+                             ('!%(_1)s', ['_1']),
+                         ]
+        )
+
+
+
+    def test_normalize_bad_group_name(self):
+        def bad_name():
+            list(normalize('(?P<_1>group)'))
+        self.assertRaises(ValueError, bad_name)
+
 
 
     def test_unique_list(self):
