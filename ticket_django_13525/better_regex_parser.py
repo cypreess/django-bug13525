@@ -1,16 +1,11 @@
 from collections import OrderedDict
 from itertools import product
 import re
-from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE
+from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE, CATEGORY, NEGATE, \
+    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF
 from sre_parse import DIGITS, WHITESPACE
 import string
 import unittest
-
-#TODO: Use global variables for clause types
-
-def parse_at(clause, context):
-    yield '', [], []
-
 
 ALLOWED_URL_CHARACTERS = set(string.digits + string.ascii_letters + string.punctuation)
 
@@ -22,16 +17,26 @@ CATEGORY_MAP = {
 }
 
 
+def parse_at(clause, context):
+    yield '', [], []
+
+
+def parse_groupref(clause, context):
+    group_id = clause
+    group_name = context['pattern_reverse_groupdict'].get(group_id, '_%d' % group_id)
+    yield '%%(%s)s' % group_name, [], [group_name]
+
+
 def parse_in(clause, context):
     assert len(clause)
     in_clause_type, in_clause_value = clause[0]
-    if in_clause_type == 'negate':
+    if in_clause_type == NEGATE:
         # e.g. ('negate', None)
         candidate_ascii = set(ALLOWED_URL_CHARACTERS)
         for in_clause_type, in_clause_value in clause[1:]:
-            if in_clause_type == 'range':
+            if in_clause_type == RANGE:
                 candidate_ascii -= map(chr, range(in_clause_value[0], in_clause_value[1] + 1))
-            elif in_clause_type == 'category':
+            elif in_clause_type == CATEGORY:
                 try:
                     candidate_ascii -= CATEGORY_MAP[in_clause_value]
                 except KeyError:
@@ -41,15 +46,15 @@ def parse_in(clause, context):
                 assert in_clause_type == 'literal'
                 candidate_ascii.discard(chr(in_clause_value))
         yield min(candidate_ascii), [], []
-    elif in_clause_type == 'literal':
+    elif in_clause_type == LITERAL:
         # e.g. ('literal', 97)
         yield chr(in_clause_value), [], []
-    elif in_clause_type == 'category':
+    elif in_clause_type == CATEGORY:
         try:
             yield min(CATEGORY_MAP[in_clause_value]), [], []
         except KeyError:
             raise NotImplementedError('%s category is not supported in character classes.' % in_clause_value)
-    elif in_clause_type == 'range':
+    elif in_clause_type == RANGE:
         # e.g. ('range', (99, 100))
         yield chr(in_clause_value[0]), [], []
 
@@ -67,10 +72,6 @@ def parse_max_repeat(clause, context):
     for format_string, args, refs in _normalize(subpattern, context):
         yield format_string * min_repeat, args, refs
 
-def parse_groupref(clause, context):
-    group_id = clause
-    group_name = context['pattern_reverse_groupdict'].get(group_id, '_%d' % group_id)
-    yield '%%(%s)s' % group_name, [], [group_name]
 
 def parse_subpattern(clause, context):
     group_id, subpattern = clause
@@ -103,12 +104,12 @@ def parse_subpattern(clause, context):
 
 
 dispatch_table = {
-    'in': parse_in,
-    'max_repeat': parse_max_repeat,
-    'at': parse_at,
-    'literal': parse_literal,
-    'subpattern': parse_subpattern,
-    'groupref': parse_groupref,
+    AT: parse_at,
+    GROUPREF: parse_groupref,
+    IN: parse_in,
+    LITERAL: parse_literal,
+    MAX_REPEAT: parse_max_repeat,
+    SUBPATTERN: parse_subpattern,
 }
 
 
@@ -125,12 +126,14 @@ def normalize(pattern):
     pattern_groupdict = pattern_parse_tree.pattern.groupdict
     pattern_reverse_groupdict = reverse_groupdict(pattern_groupdict)
     for format_string, args, refs in _normalize(pattern_parse_tree,
-                          {'pattern_reverse_groupdict': pattern_reverse_groupdict, 'in_unnamed_group': False}):
+                                                {'pattern_reverse_groupdict': pattern_reverse_groupdict,
+                                                 'in_unnamed_group': False}):
         unresolved_refs = set(refs)
         for arg in args:
             unresolved_refs.discard(arg)
         if not unresolved_refs:
             yield format_string, args
+
 
 def _normalize(pattern_parse_tree, context):
     parse_tree = [handle_clause(c, context) for c in pattern_parse_tree]
@@ -291,28 +294,28 @@ class RegexParserTestCase(unittest.TestCase):
         self.assertEqual(list(normalize('[^\s]')),
                          [
                              ('!', []),
-                             ]
+                         ]
         )
 
     def test_normalize_backrefs_1(self):
         self.assertEqual(list(normalize('([a-z])/\\1')),
                          [
                              ('%(_1)s/%(_1)s', ['_1']),
-                             ]
+                         ]
         )
 
     def test_normalize_backrefs_named(self):
         self.assertEqual(list(normalize('(?P<a>[a-z]+)/(?P=a)')),
                          [
                              ('%(a)s/%(a)s', ['a']),
-                             ]
+                         ]
         )
 
     def test_normalize_backrefs_nested(self):
         self.assertEqual(list(normalize('(?P<a>(?P<a1>[a-z]+)(?P<a2>\d+))/(?P=a)')),
                          [
                              ('%(a)s/%(a)s', ['a']),
-                             ]
+                         ]
         )
 
     def test_normalize_backrefs_nested2(self):
