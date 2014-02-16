@@ -26,14 +26,28 @@ def parse_subpattern(clause, context):
     group_id, subpattern = clause
 
     if group_id is not None:
-        group_name = context['pattern_reverse_groupdict'].get(group_id, '_%d' % group_id)
-        yield '%%(%s)s' % group_name, [group_name]
+        # Entering for capturing-groups only
+        if group_id in context['pattern_reverse_groupdict']:
+            # named groups only
+            group_name = context['pattern_reverse_groupdict'][group_id]
+            yield '%%(%s)s' % group_name, [group_name]
+        elif not context['in_unnamed_group']:
+            # unnamed groups not inside another unnamed group
+            # format strings cannot have unnamed groups nested because there is no way to provide
+            # positional argument not starting from fist one
 
-    yield from _normalize(subpattern, context)
-    # for format_strings, args in _normalize(subpattern, context):
-    #     if group_id in context['pattern_reverse_groupdict']:
-    #         yield format_strings, args
-    #     else:
+            group_name = '_%d' % group_id
+            context = dict(context)
+            context['in_unnamed_group'] = True
+            yield '%%(%s)s' % group_name, [group_name]
+
+    for format_strings, args in _normalize(subpattern, context):
+        if args:
+            yield format_strings, args
+            # for format_strings, args in _normalize(subpattern, context):
+            #     if group_id in context['pattern_reverse_groupdict']:
+            #         yield format_strings, args
+            #     else:
 
 
 dispatch_table = {
@@ -84,36 +98,54 @@ class RegexParserTestCase(unittest.TestCase):
         self.assertEqual(reverse_groupdict({'a': 1, 'b': 2}), {1: 'a', 2: 'b'})
 
     def test_normalize_named_groups_1(self):
-        self.assertEqual(list(normalize('test(?P<P>groupP)')), [('test%(P)s', ['P']), ('testgroupP', [])])
+        self.assertEqual(list(normalize('test(?P<P>groupP)')),
+                         [
+                             ('test%(P)s', ['P']),
+                         ])
 
     def test_normalize_named_groups_2(self):
         self.assertEqual(list(normalize('test(?P<P>groupP)?')),
-                         [('test', []), ('test%(P)s', ['P']), ('testgroupP', [])])
+                         [
+                             ('test', []),
+                             ('test%(P)s', ['P']),
+                         ])
 
     def test_normalize_named_groups_3(self):
         self.assertEqual(list(normalize('test(?P<A>groupA(?P<A1>groupA1)(?P<A2>groupA2))?')),
                          [('test', []),
                           ('test%(A)s', ['A']),
                           ('testgroupA%(A1)s%(A2)s', ['A1', 'A2']),
-                          ('testgroupA%(A1)sgroupA2', ['A1']),
-                          ('testgroupAgroupA1%(A2)s', ['A2']),
-                          ('testgroupAgroupA1groupA2', [])]
+                         ]
         )
 
     def test_normalize_unnamed_groups_1(self):
-        self.assertEqual(list(normalize('test(groupP)')), [('test%(_1)s', ['_1']), ('testgroupP', [])])
+        self.assertEqual(list(normalize('test(groupP)')),
+                         [
+                             ('test%(_1)s', ['_1']),
+                         ])
 
     def test_normalize_unnamed_groups_2(self):
         self.assertEqual(list(normalize('test(groupP)?')),
-                         [('test', []), ('test%(_1)s', ['_1']), ('testgroupP', [])])
+                         [
+                             ('test', []),
+                             ('test%(_1)s', ['_1']),
+                         ])
 
 
     def test_normalize_unnamed_groups_3(self):
         self.assertEqual(list(normalize('test(groupA(groupA1)(groupA2))?')),
-                         [('test', []),
-                          ('test%(_1)s', ['_1']),
-                          ('testgroupA%(_2)s%(_3)s', ['_2', '_3']),
-                          ('testgroupAgroupA1groupA2', [])]
+                         [
+                             ('test', []),
+                             ('test%(_1)s', ['_1']),
+                         ]
+        )
+
+
+    def test_normalize_unnamed_groups_3a(self):
+        self.assertEqual(list(normalize('test(groupA(groupA1)(groupA2))(groupB(groupB1)(groupB2))')),
+                         [
+                             ('test%(_1)s%(_4)s', ['_1', '_4']),
+                         ]
         )
 
 
