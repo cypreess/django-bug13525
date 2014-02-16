@@ -5,7 +5,8 @@ class Node:
     def __init__(self, pattern_iterator):
         self.quantifier = Node.Quantifier(pattern_iterator)
 
-    def parse(self, pi):
+    @classmethod
+    def parse(cls, pi):
         raise NotImplementedError()
 
     class Quantifier:
@@ -35,7 +36,8 @@ class Node:
         def __init__(self, pattern_iterator):
             self.optional, self.min_count = self.parse(pattern_iterator)
 
-        def parse(self, pi):
+        @classmethod
+        def parse(cls, pi):
             try:
                 ch = pi.peek()
             except StopIteration:
@@ -80,14 +82,19 @@ class TextNode(Node):
         self.text = self.parse(pattern_iterator)
         super().__init__(pattern_iterator)
 
-    def is_regex_special_char(self, c):
-        return c in '^$[\\?*+|{'
+    @classmethod
+    def is_regex_special_char(cls, c):
+        return c in '^$[\\?*+|{('
 
-    def parse(self, pi):
+    @classmethod
+    def parse(cls, pi):
         text = []
-        while not self.is_regex_special_char(pi.peek()):
-            text.append(pi.next())
-        return text
+        try:
+            while not cls.is_regex_special_char(pi.peek()):
+                text.append(pi.next())
+        except StopIteration:
+            pass
+        return "".join(text)
 
 
 class GroupNode(Node):
@@ -129,7 +136,44 @@ def parse_regex(pattern):
     pass
 
 
+class TextNodeTestCase(unittest.TestCase):
+
+    def test_plain_text(self):
+        pi = PeekableIterator(iter('test'))
+        self.assertEqual(TextNode.parse(pi), 'test')
+
+    def test_question_mark(self):
+        pi = PeekableIterator(iter('test?'))
+        self.assertEqual(TextNode.parse(pi), 'test')
+
+
+    def test_escape(self):
+        pi = PeekableIterator(iter('test\\('))
+        self.assertEqual(TextNode.parse(pi), 'test')
+
+    def test_parenthesis(self):
+        pi = PeekableIterator(iter('test('))
+        self.assertEqual(TextNode.parse(pi), 'test')
+
+    def test_brace(self):
+        pi = PeekableIterator(iter('test{'))
+        self.assertEqual(TextNode.parse(pi), 'test')
+
+    def test_plus(self):
+        pi = PeekableIterator(iter('test+'))
+        self.assertEqual(TextNode.parse(pi), 'test')
+
+    def test_star(self):
+        pi = PeekableIterator(iter('test*'))
+        self.assertEqual(TextNode.parse(pi), 'test')
+
+    def test_dollar(self):
+        pi = PeekableIterator(iter('test$'))
+        self.assertEqual(TextNode.parse(pi), 'test')
+
+
 class PeekableIteratorTestCase(unittest.TestCase):
+
     def test_peakable_iterator(self):
         a = PeekableIterator(iter(range(1000)))
         self.assertEqual(a.next(), 0)
@@ -148,6 +192,13 @@ class NodeQuantifierTestCase(unittest.TestCase):
         self.assertEqual(q.min_count, 1)
         self.assertEqual(q.optional, True)
         self.assertEqual(pi.next(), 't')
+
+    def test_end_of_string(self):
+        pi = PeekableIterator(iter('?'))
+        q = Node.Quantifier(pi)
+        self.assertEqual(q.min_count, 1)
+        self.assertEqual(q.optional, True)
+        self.assertRaises(StopIteration, pi.next)
 
 
     def test_plus(self):
