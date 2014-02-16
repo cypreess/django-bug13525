@@ -1,22 +1,53 @@
 from collections import OrderedDict
 from itertools import product
 import re
+from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE
+from sre_parse import DIGITS, WHITESPACE
+import string
 import unittest
 
 
-
 def parse_at(clause, context):
-    return
+    yield '', []
+
+
+ALLOWED_URL_CHARACTERS = set(string.digits + string.ascii_letters + string.punctuation)
+
+CATEGORY_MAP = {
+    CATEGORY_DIGIT: DIGITS,
+    CATEGORY_NOT_DIGIT: ALLOWED_URL_CHARACTERS - DIGITS,
+    CATEGORY_SPACE: WHITESPACE,
+    CATEGORY_NOT_SPACE: ALLOWED_URL_CHARACTERS - WHITESPACE,
+}
+
 
 def parse_in(clause, context):
     assert len(clause)
     in_clause_type, in_clause_value = clause[0]
     if in_clause_type == 'negate':
         # e.g. ('negate', None)
-        yield '', []
+        candidate_ascii = set(ALLOWED_URL_CHARACTERS)
+        for in_clause_type, in_clause_value in clause[1:]:
+            if in_clause_type == 'range':
+                candidate_ascii -= map(chr, range(in_clause_value[0], in_clause_value[1] + 1))
+            elif in_clause_type == 'category':
+                try:
+                    candidate_ascii -= CATEGORY_MAP[in_clause_value]
+                except KeyError:
+                    raise NotImplementedError(
+                        '%s category is not supported in negated character classes.' % in_clause_value)
+            else:
+                assert in_clause_type == 'literal'
+                candidate_ascii.discard(chr(in_clause_value))
+        yield min(candidate_ascii), []
     elif in_clause_type == 'literal':
         # e.g. ('literal', 97)
         yield chr(in_clause_value), []
+    elif in_clause_type == 'category':
+        try:
+            yield min(CATEGORY_MAP[in_clause_value]), []
+        except KeyError:
+            raise NotImplementedError('%s category is not supported in negated character classes.' % in_clause_value)
     elif in_clause_type == 'range':
         # e.g. ('range', (99, 100))
         yield chr(in_clause_value[0])
@@ -178,12 +209,88 @@ class RegexParserTestCase(unittest.TestCase):
         )
 
 
+    def test_normalize_at(self):
+        self.assertEqual(list(normalize('^[^test](group)$')),
+                         [
+                             ('!%(_1)s', ['_1']),
+                         ]
+        )
+
+
+    def test_normalize_category_1(self):
+        self.assertEqual(list(normalize('\d')),
+                         [
+                             ('0', []),
+                         ]
+        )
+
+
+    def test_normalize_category_2(self):
+        self.assertEqual(list(normalize('[\d]')),
+                         [
+                             ('0', []),
+                         ]
+        )
+
+
+    def test_normalize_category_3(self):
+        self.assertEqual(list(normalize('[^\d]')),
+                         [
+                             ('!', []),
+                         ]
+        )
+
+    def test_normalize_category_3a(self):
+        self.assertEqual(list(normalize('[^\D]')),
+                         [
+                             ('0', []),
+                         ]
+        )
+
+    def test_normalize_category_3b(self):
+        self.assertEqual(list(normalize('\D')),
+                         [
+                             ('!', []),
+                         ]
+        )
+
+
+    def test_normalize_category_4(self):
+        def bad_call():
+            list(normalize('[^\w]'))
+
+        self.assertRaises(NotImplementedError, bad_call)
+
+
+    def test_normalize_category_5(self):
+        self.assertEqual(list(normalize('\s')),
+                         [
+                             ('\t', []),
+                         ]
+        )
+
+
+    def test_normalize_category_6(self):
+        self.assertEqual(list(normalize('[\s]')),
+                         [
+                             ('\t', []),
+                         ]
+        )
+
+
+    def test_normalize_category_7(self):
+        self.assertEqual(list(normalize('[^\s]')),
+                         [
+                             ('!', []),
+                         ]
+        )
+
 
     def test_normalize_bad_group_name(self):
         def bad_name():
             list(normalize('(?P<_1>group)'))
-        self.assertRaises(ValueError, bad_name)
 
+        self.assertRaises(ValueError, bad_name)
 
 
     def test_unique_list(self):
