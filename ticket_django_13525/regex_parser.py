@@ -5,6 +5,7 @@ class Token:
     OPEN_PAREN = ord('(')
     CLOSE_PAREN = ord(')')
 
+
 class Node:
     def __init__(self, pattern_iterator):
         self.quantifier = Node.Quantifier(pattern_iterator)
@@ -111,7 +112,8 @@ class TextNode(Node):
         if self.quantifier.optional:
             yield '', []
         else:
-            yield from self.quantifier.render(self.text), []
+            for i in self.quantifier.render(self.text):
+                yield i, []
 
 
 class GroupNode(Node):
@@ -132,6 +134,55 @@ class GroupNode(Node):
 
 class GroupReferenceNode(Node):
     pass
+
+
+class RegexLexer:
+    ESCAPE_MAPPINGS = {
+        "A": None,
+        "b": None,
+        "B": None,
+        "d": "0",
+        "D": "x",
+        "s": " ",
+        "S": "x",
+        "w": "x",
+        "W": "!",
+        "Z": None,
+    }
+
+    def __init__(self, pattern):
+        self.it = iter(pattern)
+
+    def __iter__(self):
+        def _next():
+            while True:
+                ch = next(self.it)
+                if ch == '\\':
+                    ch = next(self.it)
+                    yield self.ESCAPE_MAPPINGS.get(ch, ch)
+                elif ch == '(':
+                    yield Token.OPEN_PAREN
+                elif ch == ')':
+                    yield Token.CLOSE_PAREN
+                elif ch == '[':
+                    ch = next(self.it)
+                    if ch in '^[':
+                        raise NotImplementedError('Please do not use negations or named character classes')
+                    elif ch == '\\':
+                        ch = next(self.it)
+                    first_found = ch
+                    while True:
+                        ch = next(self.it)
+                        if ch == ']':
+                            break
+                        elif ch == '\\':
+                            next(self.it)
+                    yield first_found
+                elif ch in '^$':
+                    pass
+                else:
+                    yield ch
+        return _next()
 
 
 class PeekableIterator:
@@ -168,10 +219,8 @@ class PeekableStringIterator(PeekableIterator):
         except StopIteration:
             return ''
 
+
 class FlagNode(Node):
-
-
-
     def __init__(self, pattern_iterator):
         self.parse(pattern_iterator)
         # not running super() here, as we don't want to parse quantifier for flag nodes
@@ -197,7 +246,7 @@ def _parse_regex(pi):
     ch = pi.peek()
 
     if ch == '(':
-    #  Groups
+        #  Groups
         pi.next()
         if pi.peek() == '?':
             # Named Group or GroupReference
@@ -222,7 +271,7 @@ def _parse_regex(pi):
             UnnamedGroup()
 
     elif ch == '[':
-    #  Classes
+        #  Classes
         pass
     elif ch == '$':
         return
@@ -236,6 +285,41 @@ def parse_regex(pattern):
     pi = PeekableStringIterator(pattern)
 
     _parse_regex(pi)
+
+
+class RegexLexerTestCase(unittest.TestCase):
+
+    def test_1(self):
+        rl = RegexLexer('test')
+        self.assertEqual(list(rl), list('test'))
+
+    def test_2(self):
+        rl = RegexLexer('test[abc]')
+        self.assertEqual(list(rl), list('testa'))
+
+    def test_escape1(self):
+        rl = RegexLexer('test\\d')
+        self.assertEqual(list(rl), list('test0'))
+
+    def test_escape1_5(self):
+        rl = RegexLexer('test\\\\')
+        self.assertEqual(list(rl), list('test\\'))
+
+    def test_escape2(self):
+        rl = RegexLexer('test[\\d]')
+        self.assertEqual(list(rl), list('testd'))
+
+    def test_escape3(self):
+        rl = RegexLexer('test[\\\\]')
+        self.assertEqual(list(rl), list('test\\'))
+
+    def test_escape4(self):
+        rl = RegexLexer('test[]]')
+        self.assertEqual(list(rl), list('test]'))
+
+    def test_3(self):
+        rl = RegexLexer('test(abc)')
+        self.assertEqual(list(rl), list('test') + [Token.OPEN_PAREN] + list('abc') + [Token.CLOSE_PAREN])
 
 
 class TextNodeTestCase(unittest.TestCase):
