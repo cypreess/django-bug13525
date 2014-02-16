@@ -9,7 +9,7 @@ import unittest
 #TODO: Use global variables for clause types
 
 def parse_at(clause, context):
-    yield '', []
+    yield '', [], []
 
 
 ALLOWED_URL_CHARACTERS = set(string.digits + string.ascii_letters + string.punctuation)
@@ -36,40 +36,41 @@ def parse_in(clause, context):
                     candidate_ascii -= CATEGORY_MAP[in_clause_value]
                 except KeyError:
                     raise NotImplementedError(
-                        '%s category is not supported in negated character classes.' % in_clause_value)
+                        '%s category is not supported in character classes.' % in_clause_value)
             else:
                 assert in_clause_type == 'literal'
                 candidate_ascii.discard(chr(in_clause_value))
-        yield min(candidate_ascii), []
+        yield min(candidate_ascii), [], []
     elif in_clause_type == 'literal':
         # e.g. ('literal', 97)
-        yield chr(in_clause_value), []
+        yield chr(in_clause_value), [], []
     elif in_clause_type == 'category':
         try:
-            yield min(CATEGORY_MAP[in_clause_value]), []
+            yield min(CATEGORY_MAP[in_clause_value]), [], []
         except KeyError:
-            raise NotImplementedError('%s category is not supported in negated character classes.' % in_clause_value)
+            raise NotImplementedError('%s category is not supported in character classes.' % in_clause_value)
     elif in_clause_type == 'range':
         # e.g. ('range', (99, 100))
-        yield chr(in_clause_value[0])
+        yield chr(in_clause_value[0]), [], []
 
 
 def parse_literal(clause, context):
-    yield (chr(clause), [])
+    yield (chr(clause), [], [])
 
 
 def parse_max_repeat(clause, context):
     min_repeat, max_repeat, subpattern = clause
     if min_repeat == 0:
-        yield '', []
+        yield '', [], []
         assert max_repeat > 0
         min_repeat = 1
-    for format_string, args in _normalize(subpattern, context):
-        yield format_string * min_repeat, args
-
+    for format_string, args, refs in _normalize(subpattern, context):
+        yield format_string * min_repeat, args, refs
 
 def parse_groupref(clause, context):
-    pass
+    group_id = clause
+    group_name = context['pattern_reverse_groupdict'].get(group_id, '_%d' % group_id)
+    yield '%%(%s)s' % group_name, [], [group_name]
 
 def parse_subpattern(clause, context):
     group_id, subpattern = clause
@@ -81,7 +82,7 @@ def parse_subpattern(clause, context):
             group_name = context['pattern_reverse_groupdict'][group_id]
             if group_name[0] == '_' and group_name[1:].isdigit():
                 raise ValueError('Group name cannot have format `_\\d+`')
-            yield '%%(%s)s' % group_name, [group_name]
+            yield '%%(%s)s' % group_name, [group_name], []
         elif not context['in_unnamed_group']:
             # unnamed groups not inside another unnamed group
             # format strings cannot have unnamed groups nested because there is no way to provide
@@ -90,11 +91,11 @@ def parse_subpattern(clause, context):
             group_name = '_%d' % group_id
             context = dict(context)
             context['in_unnamed_group'] = True
-            yield '%%(%s)s' % group_name, [group_name]
+            yield '%%(%s)s' % group_name, [group_name], []
 
-    for format_strings, args in _normalize(subpattern, context):
+    for format_strings, args, refs in _normalize(subpattern, context):
         if args:
-            yield format_strings, args
+            yield format_strings, args, refs
             # for format_strings, args in _normalize(subpattern, context):
             #     if group_id in context['pattern_reverse_groupdict']:
             #         yield format_strings, args
@@ -123,19 +124,22 @@ def normalize(pattern):
     pattern_parse_tree = re.sre_parse.parse(pattern)
     pattern_groupdict = pattern_parse_tree.pattern.groupdict
     pattern_reverse_groupdict = reverse_groupdict(pattern_groupdict)
-    yield from _normalize(pattern_parse_tree,
-                          {'pattern_reverse_groupdict': pattern_reverse_groupdict, 'in_unnamed_group': False})
-    # for format_string in _normalize(pattern_parse_tree, pattern_reverse_groupdict):
-    #     yield format_string
-    #     print(list(f for f in format_string))
-    # yield ''.join(f[0] for f in format_string), list(OrderedDict.fromkeys(sum((f[1] for f in format_string), [])))
-
+    for format_string, args, refs in _normalize(pattern_parse_tree,
+                          {'pattern_reverse_groupdict': pattern_reverse_groupdict, 'in_unnamed_group': False}):
+        unresolved_refs = set(refs)
+        for arg in args:
+            unresolved_refs.discard(arg)
+        if not unresolved_refs:
+            yield format_string, args
 
 def _normalize(pattern_parse_tree, context):
     parse_tree = [handle_clause(c, context) for c in pattern_parse_tree]
     for format_strings in product(*parse_tree):
-        s = sum((f[1] for f in format_strings), [])
-        yield ''.join(f[0] for f in format_strings), unique_list(s)
+        args = sum((f[1] for f in format_strings), [])
+        args = unique_list(args)
+        refs = sum((f[2] for f in format_strings), [])
+        refs = list(set(refs))
+        yield ''.join(f[0] for f in format_strings), args, refs
 
 
 def handle_clause(clause, context):
@@ -287,6 +291,34 @@ class RegexParserTestCase(unittest.TestCase):
         self.assertEqual(list(normalize('[^\s]')),
                          [
                              ('!', []),
+                             ]
+        )
+
+    def test_normalize_backrefs_1(self):
+        self.assertEqual(list(normalize('([a-z])/\\1')),
+                         [
+                             ('%(_1)s/%(_1)s', ['_1']),
+                             ]
+        )
+
+    def test_normalize_backrefs_named(self):
+        self.assertEqual(list(normalize('(?P<a>[a-z]+)/(?P=a)')),
+                         [
+                             ('%(a)s/%(a)s', ['a']),
+                             ]
+        )
+
+    def test_normalize_backrefs_nested(self):
+        self.assertEqual(list(normalize('(?P<a>(?P<a1>[a-z]+)(?P<a2>\d+))/(?P=a)')),
+                         [
+                             ('%(a)s/%(a)s', ['a']),
+                             ]
+        )
+
+    def test_normalize_backrefs_nested2(self):
+        self.assertEqual(list(normalize('(?P<a>(?P<a1>[a-z]+)(?P<a2>\d+))/(?P=a2)')),
+                         [
+                             ('%(a1)s%(a2)s/%(a2)s', ['a1', 'a2']),
                          ]
         )
 
