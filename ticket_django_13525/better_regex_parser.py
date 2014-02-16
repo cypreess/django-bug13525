@@ -6,6 +6,7 @@ from sre_parse import DIGITS, WHITESPACE
 import string
 import unittest
 
+#TODO: Use global variables for clause types
 
 def parse_at(clause, context):
     yield '', []
@@ -67,6 +68,9 @@ def parse_max_repeat(clause, context):
         yield format_string * min_repeat, args
 
 
+def parse_groupref(clause, context):
+    pass
+
 def parse_subpattern(clause, context):
     group_id, subpattern = clause
 
@@ -103,6 +107,7 @@ dispatch_table = {
     'at': parse_at,
     'literal': parse_literal,
     'subpattern': parse_subpattern,
+    'groupref': parse_groupref,
 }
 
 
