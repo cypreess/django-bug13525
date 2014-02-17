@@ -244,6 +244,15 @@ class RegexParserTestCase(unittest.TestCase):
         )
 
 
+    def test_normalize_class_4(self):
+        self.assertEqual(list(normalize('[^!](group)')),
+                         [
+                             ('"%(_0)s', ['_0']),
+                         ]
+        )
+
+
+
     def test_normalize_at(self):
         self.assertEqual(list(normalize('^[^test](group)$')),
                          [
