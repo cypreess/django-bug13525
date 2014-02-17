@@ -2,7 +2,7 @@ from collections import OrderedDict
 from itertools import product
 import re
 from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE, CATEGORY, NEGATE, \
-    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH, ANY, NOT_LITERAL
+    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH, ANY, NOT_LITERAL, CATEGORY_WORD
 from sre_parse import DIGITS, WHITESPACE
 import string
 import unittest
@@ -14,6 +14,7 @@ CATEGORY_MAP = {
     CATEGORY_NOT_DIGIT: ALLOWED_URL_CHARACTERS - DIGITS,
     CATEGORY_SPACE: WHITESPACE,
     CATEGORY_NOT_SPACE: ALLOWED_URL_CHARACTERS - WHITESPACE,
+    CATEGORY_WORD: set(string.ascii_letters + string.digits + '_')
 }
 
 
@@ -282,11 +283,11 @@ class RegexParserTestCase(unittest.TestCase):
                              ('!', []),
                          ])
 
-    def test_normalize_category_4(self):
-        def bad_call():
-            list(normalize('[^\w]'))
-
-        self.assertRaises(NotImplementedError, bad_call)
+    # def test_normalize_category_4(self):
+    #     def bad_call():
+    #         return list(normalize('\Za'))
+    #
+    #     self.assertRaises(NotImplementedError, bad_call)
 
     def test_normalize_category_5(self):
         self.assertEqual(list(normalize('\s')),
@@ -403,6 +404,11 @@ class RegexParserTestCase(unittest.TestCase):
                              ('%(_0)s', ['_0']),
                          ])
 
+    def test_category_word(self):
+        self.assertEqual(list(normalize(r"\w")),
+                         [
+                             ('0', []),
+                         ])
 
 if __name__ == '__main__':
     unittest.main()
