@@ -75,12 +75,14 @@ def parse_literal(clause, context):
 
 def parse_max_repeat(clause, context):
     min_repeat, max_repeat, subpattern = clause
-    if min_repeat == 0:
+    repeat = min_repeat
+    if repeat == 0:
         yield '', [], []
         assert max_repeat > 0
-        min_repeat = 1
+        repeat = 1
     for format_string, args, refs in _normalize(subpattern, context):
-        yield format_string * min_repeat, args, refs
+        if not min_repeat == 0 or args or refs:
+            yield format_string * repeat, args, refs
 
 
 def parse_subpattern(clause, context):
@@ -377,14 +379,54 @@ class RegexParserTestCase(unittest.TestCase):
     def test_any(self):
         self.assertEqual(list(normalize(r"a(.*)")),
                          [
-                             ('a%(_1)s', ['_0']),
+                             ('a%(_0)s', ['_0']),
                          ]
         )
 
-    def test_any(self):
+    def test_any_1(self):
         self.assertEqual(list(normalize(r".(.*)")),
                          [
                              ('.%(_0)s', ['_0']),
+                         ]
+        )
+
+
+    def test_max_repeat_1(self):
+        self.assertEqual(list(normalize(r".*(A)")),
+                         [
+                             ('%(_0)s', ['_0']),
+                         ]
+        )
+
+
+    def test_max_repeat_2(self):
+        self.assertEqual(list(normalize(r".+(A)")),
+                         [
+                             ('.%(_0)s', ['_0']),
+                         ]
+        )
+
+
+    def test_max_repeat_3(self):
+        self.assertEqual(list(normalize(r"(?:.)+(A)")),
+                         [
+                             ('.%(_0)s', ['_0']),
+                         ]
+        )
+
+    def test_max_repeat_4(self):
+        self.assertEqual(list(normalize(r"(A)*")),
+                         [
+                             ('', []),
+                             ('%(_0)s', ['_0']),
+                         ]
+        )
+
+
+    def test_max_repeat_5(self):
+        self.assertEqual(list(normalize(r"(A)+")),
+                         [
+                             ('%(_0)s', ['_0']),
                          ]
         )
 
