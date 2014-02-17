@@ -2,7 +2,7 @@ from collections import OrderedDict
 from itertools import product
 import re
 from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE, CATEGORY, NEGATE, \
-    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH
+    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH, ANY
 from sre_parse import DIGITS, WHITESPACE
 import string
 import unittest
@@ -21,6 +21,10 @@ def parse_at(clause, context):
     yield '', [], []
 
 
+def parse_any(clause, context):
+    yield '.', [], []
+
+
 def parse_branch(clause, context):
     _, subpatterns = clause
     for subpattern in subpatterns:
@@ -29,7 +33,7 @@ def parse_branch(clause, context):
 
 def parse_groupref(clause, context):
     group_id = clause
-    group_name = context['pattern_reverse_groupdict'].get(group_id, '_%d' % group_id)
+    group_name = context['pattern_reverse_groupdict'].get(group_id, '_%d' % (group_id - 1))
     yield '%%(%s)s' % group_name, [], [group_name]
 
 
@@ -95,21 +99,18 @@ def parse_subpattern(clause, context):
             # format strings cannot have unnamed groups nested because there is no way to provide
             # positional argument not starting from fist one
 
-            group_name = '_%d' % group_id
+            group_name = '_%d' % (group_id - 1)  # unnamed groups are counted from 0 rather then 1
             context = dict(context)
             context['in_unnamed_group'] = True
             yield '%%(%s)s' % group_name, [group_name], []
 
     for format_strings, args, refs in _normalize(subpattern, context):
-        if args:
+        if args or group_id is None:
             yield format_strings, args, refs
-            # for format_strings, args in _normalize(subpattern, context):
-            #     if group_id in context['pattern_reverse_groupdict']:
-            #         yield format_strings, args
-            #     else:
 
 
 dispatch_table = {
+    ANY: parse_any,
     AT: parse_at,
     BRANCH: parse_branch,
     GROUPREF: parse_groupref,
@@ -126,6 +127,10 @@ def reverse_groupdict(pattern_groupdict):
 
 def unique_list(l):
     return list(OrderedDict.fromkeys(l).keys())
+
+
+def normalize_list(pattern):
+    return list(normalize(pattern))
 
 
 def normalize(pattern):
@@ -185,14 +190,14 @@ class RegexParserTestCase(unittest.TestCase):
     def test_normalize_unnamed_groups_1(self):
         self.assertEqual(list(normalize('test(groupP)')),
                          [
-                             ('test%(_1)s', ['_1']),
+                             ('test%(_0)s', ['_0']),
                          ])
 
     def test_normalize_unnamed_groups_2(self):
         self.assertEqual(list(normalize('test(groupP)?')),
                          [
                              ('test', []),
-                             ('test%(_1)s', ['_1']),
+                             ('test%(_0)s', ['_0']),
                          ])
 
 
@@ -200,7 +205,7 @@ class RegexParserTestCase(unittest.TestCase):
         self.assertEqual(list(normalize('test(groupA(groupA1)(groupA2))?')),
                          [
                              ('test', []),
-                             ('test%(_1)s', ['_1']),
+                             ('test%(_0)s', ['_0']),
                          ]
         )
 
@@ -208,14 +213,14 @@ class RegexParserTestCase(unittest.TestCase):
     def test_normalize_unnamed_groups_3a(self):
         self.assertEqual(list(normalize('test(groupA(groupA1)(groupA2))(groupB(groupB1)(groupB2))')),
                          [
-                             ('test%(_1)s%(_4)s', ['_1', '_4']),
+                             ('test%(_0)s%(_3)s', ['_0', '_3']),
                          ]
         )
 
     def test_normalize_class_1(self):
         self.assertEqual(list(normalize('[test](group)')),
                          [
-                             ('t%(_1)s', ['_1']),
+                             ('t%(_0)s', ['_0']),
                          ]
         )
 
@@ -223,7 +228,7 @@ class RegexParserTestCase(unittest.TestCase):
     def test_normalize_class_2(self):
         self.assertEqual(list(normalize('[^test](group)')),
                          [
-                             ('!%(_1)s', ['_1']),
+                             ('!%(_0)s', ['_0']),
                          ]
         )
 
@@ -231,7 +236,7 @@ class RegexParserTestCase(unittest.TestCase):
     def test_normalize_at(self):
         self.assertEqual(list(normalize('^[^test](group)$')),
                          [
-                             ('!%(_1)s', ['_1']),
+                             ('!%(_0)s', ['_0']),
                          ]
         )
 
@@ -307,7 +312,7 @@ class RegexParserTestCase(unittest.TestCase):
     def test_normalize_backrefs_1(self):
         self.assertEqual(list(normalize('([a-z])/\\1')),
                          [
-                             ('%(_1)s/%(_1)s', ['_1']),
+                             ('%(_0)s/%(_0)s', ['_0']),
                          ]
         )
 
@@ -347,8 +352,8 @@ class RegexParserTestCase(unittest.TestCase):
     def test_alternation_1(self):
         self.assertEqual(list(normalize('(first)|(second)')),
                          [
+                             ('%(_0)s', ['_0']),
                              ('%(_1)s', ['_1']),
-                             ('%(_2)s', ['_2']),
                          ]
         )
 
@@ -358,6 +363,28 @@ class RegexParserTestCase(unittest.TestCase):
                              ('%(A)s', ['A']),
                              ('%(B)s', ['B']),
                              ('%(C)s', ['C']),
+                         ]
+        )
+
+
+    def test_nonmatching_group(self):
+        self.assertEqual(list(normalize(r"(?:non-capturing)")),
+                         [
+                             ('non-capturing', []),
+                         ]
+        )
+
+    def test_any(self):
+        self.assertEqual(list(normalize(r"a(.*)")),
+                         [
+                             ('a%(_1)s', ['_0']),
+                         ]
+        )
+
+    def test_any(self):
+        self.assertEqual(list(normalize(r".(.*)")),
+                         [
+                             ('.%(_0)s', ['_0']),
                          ]
         )
 
