@@ -2,7 +2,7 @@ from collections import OrderedDict
 from itertools import product
 import re
 from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE, CATEGORY, NEGATE, \
-    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF
+    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH
 from sre_parse import DIGITS, WHITESPACE
 import string
 import unittest
@@ -19,6 +19,12 @@ CATEGORY_MAP = {
 
 def parse_at(clause, context):
     yield '', [], []
+
+
+def parse_branch(clause, context):
+    _, subpatterns = clause
+    for subpattern in subpatterns:
+        yield from _normalize(subpattern, context)
 
 
 def parse_groupref(clause, context):
@@ -105,6 +111,7 @@ def parse_subpattern(clause, context):
 
 dispatch_table = {
     AT: parse_at,
+    BRANCH: parse_branch,
     GROUPREF: parse_groupref,
     IN: parse_in,
     LITERAL: parse_literal,
@@ -335,6 +342,24 @@ class RegexParserTestCase(unittest.TestCase):
 
     def test_unique_list(self):
         self.assertEqual(unique_list([9, 1, 2, 1, 1, 3]), [9, 1, 2, 3])
+
+
+    def test_alternation_1(self):
+        self.assertEqual(list(normalize('(first)|(second)')),
+                         [
+                             ('%(_1)s', ['_1']),
+                             ('%(_2)s', ['_2']),
+                         ]
+        )
+
+    def test_alternation_2(self):
+        self.assertEqual(list(normalize('(?P<A>(?P<B>b)|(?P<C>c))')),
+                         [
+                             ('%(A)s', ['A']),
+                             ('%(B)s', ['B']),
+                             ('%(C)s', ['C']),
+                         ]
+        )
 
 
 if __name__ == '__main__':
