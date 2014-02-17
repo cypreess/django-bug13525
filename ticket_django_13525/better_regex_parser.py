@@ -45,7 +45,7 @@ def parse_in(clause, context):
         candidate_ascii = set(ALLOWED_URL_CHARACTERS)
         for in_clause_type, in_clause_value in clause[1:]:
             if in_clause_type == RANGE:
-                candidate_ascii -= map(chr, range(in_clause_value[0], in_clause_value[1] + 1))
+                candidate_ascii -= set(map(chr, range(in_clause_value[0], in_clause_value[1] + 1)))
             elif in_clause_type == CATEGORY:
                 try:
                     candidate_ascii -= CATEGORY_MAP[in_clause_value]
@@ -231,6 +231,15 @@ class RegexParserTestCase(unittest.TestCase):
         self.assertEqual(list(normalize('[^test](group)')),
                          [
                              ('!%(_0)s', ['_0']),
+                         ]
+        )
+
+
+
+    def test_normalize_class_3(self):
+        self.assertEqual(list(normalize('[^!-#](group)')),
+                         [
+                             ('$%(_0)s', ['_0']),
                          ]
         )
 
