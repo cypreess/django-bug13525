@@ -2,7 +2,7 @@ from collections import OrderedDict
 from itertools import product
 import re
 from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE, CATEGORY, NEGATE, \
-    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH, ANY
+    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH, ANY, NOT_LITERAL
 from sre_parse import DIGITS, WHITESPACE
 import string
 import unittest
@@ -72,6 +72,10 @@ def parse_in(clause, context):
 def parse_literal(clause, context):
     yield (chr(clause), [], [])
 
+def parse_not_literal(clause, context):
+    candidate_ascii = set(ALLOWED_URL_CHARACTERS)
+    candidate_ascii.discard(chr(clause))
+    yield min(candidate_ascii), [], []
 
 def parse_max_repeat(clause, context):
     min_repeat, max_repeat, subpattern = clause
@@ -119,6 +123,7 @@ dispatch_table = {
     IN: parse_in,
     LITERAL: parse_literal,
     MAX_REPEAT: parse_max_repeat,
+    NOT_LITERAL: parse_not_literal,
     SUBPATTERN: parse_subpattern,
 }
 
