@@ -1,4 +1,5 @@
 from collections import OrderedDict, namedtuple
+from copy import copy
 from itertools import product
 import re
 from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE, CATEGORY, NEGATE, \
@@ -10,6 +11,16 @@ import unittest
 ALLOWED_URL_CHARACTERS = set(string.digits + string.ascii_letters + string.punctuation)
 
 Category = namedtuple('Category', ['char_set', 'default_mapping'])
+
+
+class Context:
+    """Mutable context for parser"""
+    __slots__ = ('pattern_reverse_groupdict', 'in_unnamed_group')
+
+    def __init__(self, pattern_reverse_groupdict, in_unnamed_group=False):
+        self.pattern_reverse_groupdict = pattern_reverse_groupdict
+        self.in_unnamed_group = in_unnamed_group
+
 
 CATEGORY_MAP = {
     CATEGORY_DIGIT: Category(DIGITS, '0'),
@@ -45,7 +56,7 @@ def parse_branch(clause, context):
 
 def parse_groupref(clause, context):
     group_id = clause
-    group_name = context['pattern_reverse_groupdict'].get(group_id, '_%d' % (group_id - 1))
+    group_name = context.pattern_reverse_groupdict.get(group_id, '_%d' % (group_id - 1))
     yield '%%(%s)s' % group_name, [], [group_name]
 
 
@@ -125,7 +136,7 @@ def parse_named_group(clause, context):
     [('subpattern', (1, [('literal', 97)]))]
     """
     group_id, subpattern = clause
-    group_name = context['pattern_reverse_groupdict'][group_id]
+    group_name = context.pattern_reverse_groupdict[group_id]
     if group_name[0] == '_' and group_name[1:].isdigit():
         raise ValueError('Group name cannot have format `_\\d+`')
     yield '%%(%s)s' % group_name, [group_name], []
@@ -137,13 +148,13 @@ def parse_unnamed_group(clause, context):
     [('subpattern', (1, [('literal', 97)]))]
     """
     group_id, subpattern = clause
-    if not context['in_unnamed_group']:
+    if not context.in_unnamed_group:
         # unnamed groups not inside another unnamed group
         # format strings cannot have unnamed groups nested because there is no way to provide
         # positional argument not starting from the first one
 
         group_name = '_%d' % (group_id - 1)  # unnamed groups are counted from 0 rather then 1
-        context['in_unnamed_group'] = True
+        context.in_unnamed_group = True
         yield '%%(%s)s' % group_name, [group_name], []
 
 
@@ -153,11 +164,11 @@ def parse_subpattern(clause, context):
     [('subpattern', (1, [('literal', 97)]))]
     """
     group_id, subpattern = clause
-    context = dict(context)
+    context = copy(context)
 
     if group_id is not None:
         # Entering for capturing-groups only
-        if group_id in context['pattern_reverse_groupdict']:
+        if group_id in context.pattern_reverse_groupdict:
             yield from parse_named_group(clause, context)
         else:
             yield from parse_unnamed_group(clause, context)
@@ -203,8 +214,7 @@ def normalize(pattern):
     pattern_groupdict = pattern_parse_tree.pattern.groupdict
     pattern_reverse_groupdict = reverse_groupdict(pattern_groupdict)
     for format_string, args, refs in _normalize(pattern_parse_tree,
-                                                {'pattern_reverse_groupdict': pattern_reverse_groupdict,
-                                                 'in_unnamed_group': False}):
+                                                Context(pattern_reverse_groupdict, False)):
         unresolved_refs = set(refs)
         for arg in args:
             unresolved_refs.discard(arg)
