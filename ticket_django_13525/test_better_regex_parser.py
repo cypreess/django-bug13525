@@ -238,7 +238,7 @@ class RegexParserTestCase(unittest.TestCase):
     def test_category_word(self):
         self.assertEqual(list(normalize(r"\w")),
                          [
-                             ('X', []),
+                             ('x', []),
                          ])
 
     def test_category_word1(self):
