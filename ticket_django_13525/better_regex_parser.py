@@ -71,7 +71,7 @@ def parse_in(clause, context):
         yield min(candidate_ascii), [], []
     elif in_clause_type == LITERAL:
         # e.g. ('literal', 97)
-        yield chr(in_clause_value), [], []
+        yield from parse_literal(in_clause_value, context)
     elif in_clause_type == CATEGORY:
         try:
             yield min(CATEGORY_MAP[in_clause_value]), [], []
@@ -116,30 +116,48 @@ def parse_max_repeat(clause, context):
             yield format_string * repeat, args, refs
 
 
+def parse_named_group(clause, context):
+    """
+    >>> re.sre_parse.parse('(a)')
+    [('subpattern', (1, [('literal', 97)]))]
+    """
+    group_id, subpattern = clause
+    group_name = context['pattern_reverse_groupdict'][group_id]
+    if group_name[0] == '_' and group_name[1:].isdigit():
+        raise ValueError('Group name cannot have format `_\\d+`')
+    yield '%%(%s)s' % group_name, [group_name], []
+
+
+def parse_unnamed_group(clause, context):
+    """
+    >>> re.sre_parse.parse('(a)')
+    [('subpattern', (1, [('literal', 97)]))]
+    """
+    group_id, subpattern = clause
+    if not context['in_unnamed_group']:
+        # unnamed groups not inside another unnamed group
+        # format strings cannot have unnamed groups nested because there is no way to provide
+        # positional argument not starting from the first one
+
+        group_name = '_%d' % (group_id - 1)  # unnamed groups are counted from 0 rather then 1
+        context['in_unnamed_group'] = True
+        yield '%%(%s)s' % group_name, [group_name], []
+
+
 def parse_subpattern(clause, context):
     """
     >>> re.sre_parse.parse('(a)')
     [('subpattern', (1, [('literal', 97)]))]
     """
     group_id, subpattern = clause
+    context = dict(context)
 
     if group_id is not None:
         # Entering for capturing-groups only
         if group_id in context['pattern_reverse_groupdict']:
-            # named groups only
-            group_name = context['pattern_reverse_groupdict'][group_id]
-            if group_name[0] == '_' and group_name[1:].isdigit():
-                raise ValueError('Group name cannot have format `_\\d+`')
-            yield '%%(%s)s' % group_name, [group_name], []
-        elif not context['in_unnamed_group']:
-            # unnamed groups not inside another unnamed group
-            # format strings cannot have unnamed groups nested because there is no way to provide
-            # positional argument not starting from fist one
-
-            group_name = '_%d' % (group_id - 1)  # unnamed groups are counted from 0 rather then 1
-            context = dict(context)
-            context['in_unnamed_group'] = True
-            yield '%%(%s)s' % group_name, [group_name], []
+            yield from parse_named_group(clause, context)
+        else:
+            yield from parse_unnamed_group(clause, context)
 
     for format_strings, args, refs in _normalize(subpattern, context):
         if args or group_id is None:
@@ -446,6 +464,7 @@ class RegexParserTestCase(unittest.TestCase):
                          [
                              ('0', []),
                          ])
+
 
 if __name__ == '__main__':
     unittest.main()
