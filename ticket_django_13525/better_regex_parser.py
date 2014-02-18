@@ -468,6 +468,12 @@ class RegexParserTestCase(unittest.TestCase):
                              ('X', []),
                          ])
 
+    def test_category_word1(self):
+        self.assertEqual(list(normalize(r"\W")),
+                         [
+                             ('!', []),
+                         ])
+
 
 if __name__ == '__main__':
     unittest.main()
