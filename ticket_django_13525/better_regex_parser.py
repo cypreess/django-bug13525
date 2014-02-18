@@ -1,20 +1,23 @@
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from itertools import product
 import re
 from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE, CATEGORY, NEGATE, \
-    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH, ANY, NOT_LITERAL, CATEGORY_WORD
+    RANGE, LITERAL, IN, MAX_REPEAT, AT, SUBPATTERN, GROUPREF, BRANCH, ANY, NOT_LITERAL, CATEGORY_WORD, CATEGORY_NOT_WORD
 from sre_parse import DIGITS, WHITESPACE
 import string
 import unittest
 
 ALLOWED_URL_CHARACTERS = set(string.digits + string.ascii_letters + string.punctuation)
 
+Category = namedtuple('Category', ['char_set', 'default_mapping'])
+
 CATEGORY_MAP = {
-    CATEGORY_DIGIT: DIGITS,
-    CATEGORY_NOT_DIGIT: ALLOWED_URL_CHARACTERS - DIGITS,
-    CATEGORY_SPACE: WHITESPACE,
-    CATEGORY_NOT_SPACE: ALLOWED_URL_CHARACTERS - WHITESPACE,
-    CATEGORY_WORD: set(string.ascii_letters + string.digits + '_')
+    CATEGORY_DIGIT: Category(DIGITS, '0'),
+    CATEGORY_NOT_DIGIT: Category(ALLOWED_URL_CHARACTERS - DIGITS, 'x'),
+    CATEGORY_SPACE: Category(WHITESPACE, ' '),
+    CATEGORY_NOT_SPACE: Category(ALLOWED_URL_CHARACTERS - WHITESPACE, 'x'),
+    CATEGORY_WORD: Category(set(string.ascii_letters + string.digits + '_'), 'X'),
+    CATEGORY_NOT_WORD: Category(set(string.ascii_letters + string.digits + '_'), '!'),
 }
 
 
@@ -61,7 +64,7 @@ def parse_in(clause, context):
                 candidate_ascii -= set(map(chr, range(in_clause_value[0], in_clause_value[1] + 1)))
             elif in_clause_type == CATEGORY:
                 try:
-                    candidate_ascii -= CATEGORY_MAP[in_clause_value]
+                    candidate_ascii -= CATEGORY_MAP[in_clause_value].char_set
                 except KeyError:
                     raise NotImplementedError(
                         '%s category is not supported in character classes.' % in_clause_value)
@@ -74,7 +77,7 @@ def parse_in(clause, context):
         yield from parse_literal(in_clause_value, context)
     elif in_clause_type == CATEGORY:
         try:
-            yield min(CATEGORY_MAP[in_clause_value]), [], []
+            yield CATEGORY_MAP[in_clause_value].default_mapping, [], []
         except KeyError:
             raise NotImplementedError('%s category is not supported in character classes.' % in_clause_value)
     elif in_clause_type == RANGE:
@@ -335,7 +338,7 @@ class RegexParserTestCase(unittest.TestCase):
     def test_normalize_category_3b(self):
         self.assertEqual(list(normalize('\D')),
                          [
-                             ('!', []),
+                             ('x', []),
                          ])
 
     # def test_normalize_category_4(self):
@@ -347,13 +350,13 @@ class RegexParserTestCase(unittest.TestCase):
     def test_normalize_category_5(self):
         self.assertEqual(list(normalize('\s')),
                          [
-                             ('\t', []),
+                             (' ', []),
                          ])
 
     def test_normalize_category_6(self):
         self.assertEqual(list(normalize('[\s]')),
                          [
-                             ('\t', []),
+                             (' ', []),
                          ])
 
     def test_normalize_category_7(self):
@@ -462,7 +465,7 @@ class RegexParserTestCase(unittest.TestCase):
     def test_category_word(self):
         self.assertEqual(list(normalize(r"\w")),
                          [
-                             ('0', []),
+                             ('X', []),
                          ])
 
 
