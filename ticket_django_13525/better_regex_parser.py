@@ -1,5 +1,4 @@
 from collections import OrderedDict, namedtuple
-from copy import copy
 from itertools import product
 import re
 from sre_constants import CATEGORY_DIGIT, CATEGORY_NOT_DIGIT, CATEGORY_SPACE, CATEGORY_NOT_SPACE, CATEGORY, NEGATE, \
@@ -10,17 +9,9 @@ import unittest
 
 ALLOWED_URL_CHARACTERS = set(string.digits + string.ascii_letters + string.punctuation)
 
-Category = namedtuple('Category', ['char_set', 'default_mapping'])
+Category = namedtuple('Category', ('char_set', 'default_mapping'))
 
-
-class Context:
-    """Mutable context for parser"""
-    __slots__ = ('pattern_reverse_groupdict', 'in_unnamed_group')
-
-    def __init__(self, pattern_reverse_groupdict, in_unnamed_group=False):
-        self.pattern_reverse_groupdict = pattern_reverse_groupdict
-        self.in_unnamed_group = in_unnamed_group
-
+Context = namedtuple('Context', ('pattern_reverse_groupdict', 'in_unnamed_group'))
 
 CATEGORY_MAP = {
     CATEGORY_DIGIT: Category(DIGITS, '0'),
@@ -130,48 +121,29 @@ def parse_max_repeat(clause, context):
             yield format_string * repeat, args, refs
 
 
-def parse_named_group(clause, context):
-    """
-    >>> re.sre_parse.parse('(a)')
-    [('subpattern', (1, [('literal', 97)]))]
-    """
-    group_id, subpattern = clause
-    group_name = context.pattern_reverse_groupdict[group_id]
-    if group_name[0] == '_' and group_name[1:].isdigit():
-        raise ValueError('Group name cannot have format `_\\d+`')
-    yield '%%(%s)s' % group_name, [group_name], []
-
-
-def parse_unnamed_group(clause, context):
-    """
-    >>> re.sre_parse.parse('(a)')
-    [('subpattern', (1, [('literal', 97)]))]
-    """
-    group_id, subpattern = clause
-    if not context.in_unnamed_group:
-        # unnamed groups not inside another unnamed group
-        # format strings cannot have unnamed groups nested because there is no way to provide
-        # positional argument not starting from the first one
-
-        group_name = '_%d' % (group_id - 1)  # unnamed groups are counted from 0 rather then 1
-        context.in_unnamed_group = True
-        yield '%%(%s)s' % group_name, [group_name], []
-
-
 def parse_subpattern(clause, context):
     """
     >>> re.sre_parse.parse('(a)')
     [('subpattern', (1, [('literal', 97)]))]
     """
     group_id, subpattern = clause
-    context = copy(context)
 
     if group_id is not None:
         # Entering for capturing-groups only
         if group_id in context.pattern_reverse_groupdict:
-            yield from parse_named_group(clause, context)
-        else:
-            yield from parse_unnamed_group(clause, context)
+            # named groups only
+            group_name = context.pattern_reverse_groupdict[group_id]
+            if group_name[0] == '_' and group_name[1:].isdigit():
+                raise ValueError('Group name cannot have format `_\\d+`')
+            yield '%%(%s)s' % group_name, [group_name], []
+        elif not context.in_unnamed_group:
+            # unnamed groups not inside another unnamed group
+            # format strings cannot have unnamed groups nested because there is no way to provide
+            # positional argument not starting from fist one
+
+            group_name = '_%d' % (group_id - 1)  # unnamed groups are counted from 0 rather then 1
+            context = context._replace(in_unnamed_group=True)
+            yield '%%(%s)s' % group_name, [group_name], []
 
     for format_strings, args, refs in _normalize(subpattern, context):
         if args or group_id is None:
