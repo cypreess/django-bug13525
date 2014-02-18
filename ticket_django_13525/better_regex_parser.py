@@ -17,7 +17,7 @@ CATEGORY_MAP = {
     CATEGORY_NOT_DIGIT: Category(ALLOWED_URL_CHARACTERS - DIGITS, 'x'),
     CATEGORY_SPACE: Category(WHITESPACE, ' '),
     CATEGORY_NOT_SPACE: Category(ALLOWED_URL_CHARACTERS - WHITESPACE, 'x'),
-    CATEGORY_WORD: Category(set(string.ascii_letters + string.digits + '_'), 'X'),
+    CATEGORY_WORD: Category(set(string.ascii_letters + string.digits + '_'), 'x'),
     CATEGORY_NOT_WORD: Category(set(string.ascii_letters + string.digits + '_'), '!'),
 }
 
