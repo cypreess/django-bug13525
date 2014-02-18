@@ -19,10 +19,18 @@ CATEGORY_MAP = {
 
 
 def parse_at(clause, context):
+    """
+    >>> re.sre_parse.parse('^$')
+    [('at', 'at_beginning'), ('at', 'at_end')]
+    """
     yield '', [], []
 
 
 def parse_any(clause, context):
+    """
+    >>> re.sre_parse.parse('.')
+    [('any', None)]
+    """
     yield '.', [], []
 
 
@@ -39,6 +47,10 @@ def parse_groupref(clause, context):
 
 
 def parse_in(clause, context):
+    """
+    >>> re.sre_parse.parse('[a-z]')
+    [('in', [('range', (97, 122))])]
+    """
     assert len(clause)
     in_clause_type, in_clause_value = clause[0]
     if in_clause_type == NEGATE:
@@ -71,16 +83,28 @@ def parse_in(clause, context):
 
 
 def parse_literal(clause, context):
+    """
+    >>> re.sre_parse.parse('a')
+    [('literal', 97)]
+    """
     yield (chr(clause), [], [])
 
 
 def parse_not_literal(clause, context):
+    """
+    >>> re.sre_parse.parse('[^a]')
+    [('not_literal', 97)]
+    """
     candidate_ascii = set(ALLOWED_URL_CHARACTERS)
     candidate_ascii.discard(chr(clause))
     yield min(candidate_ascii), [], []
 
 
 def parse_max_repeat(clause, context):
+    """
+    >>> re.sre_parse.parse('a{3,5}')
+    [('max_repeat', (3, 5, [('literal', 97)]))]
+    """
     min_repeat, max_repeat, subpattern = clause
     repeat = min_repeat
     if repeat == 0:
@@ -93,6 +117,10 @@ def parse_max_repeat(clause, context):
 
 
 def parse_subpattern(clause, context):
+    """
+    >>> re.sre_parse.parse('(a)')
+    [('subpattern', (1, [('literal', 97)]))]
+    """
     group_id, subpattern = clause
 
     if group_id is not None:
@@ -118,7 +146,7 @@ def parse_subpattern(clause, context):
             yield format_strings, args, refs
 
 
-dispatch_table = {
+DISPATCH_TABLE = {
     ANY: parse_any,
     AT: parse_at,
     BRANCH: parse_branch,
@@ -132,10 +160,16 @@ dispatch_table = {
 
 
 def reverse_groupdict(pattern_groupdict):
+    """
+    Switches dict keys with values and return new dict
+    """
     return {v: k for k, v in pattern_groupdict.items()}
 
 
 def unique_list(l):
+    """
+    Stable list unique.
+    """
     return list(OrderedDict.fromkeys(l).keys())
 
 
@@ -158,7 +192,7 @@ def normalize(pattern):
 
 
 def _normalize(pattern_parse_tree, context):
-    parse_tree = [handle_clause(c, context) for c in pattern_parse_tree]
+    parse_tree = [dispatch_clause(c, context) for c in pattern_parse_tree]
     for format_strings in product(*parse_tree):
         args = sum((f[1] for f in format_strings), [])
         args = unique_list(args)
@@ -167,9 +201,12 @@ def _normalize(pattern_parse_tree, context):
         yield ''.join(f[0] for f in format_strings), args, refs
 
 
-def handle_clause(clause, context):
+def dispatch_clause(clause, context):
+    """
+    Dispatches a single clause depending its type and yields format strings propositions
+    """
     clause_type, clause_value = clause
-    yield from dispatch_table[clause_type](clause_value, context)
+    yield from DISPATCH_TABLE[clause_type](clause_value, context)
 
 
 class RegexParserTestCase(unittest.TestCase):
